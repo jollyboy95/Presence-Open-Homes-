@@ -1,0 +1,19 @@
+name: PresenceOpenHomes
+options:
+  bundleIdPrefix: au.com.presence
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  PresenceOpenHomes:
+    type: application
+    platform: iOS
+    sources: [PresenceOpenHomes]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: au.com.presence.openhomes
+        SWIFT_VERSION: 5.0
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationDisplayName: Presence Open Homes
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGNING_ALLOWED: NO
