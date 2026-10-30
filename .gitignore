@@ -1,3 +1,4 @@
 PresenceOpenHomes.xcodeproj/
 DerivedData/
 .DS_Store
+node_modules/

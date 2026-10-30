@@ -11,6 +11,8 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var canGoBack = false
     private var observations: [NSKeyValueObservation] = []
     @Published var status = "Ready"
+    @Published var filterNotice: String?
+    private var filterHandler: FilterMessageHandler?
 
     // A single persistent website data store retains cookies between launches.
     let webView: WKWebView
@@ -18,11 +20,22 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
     override init() {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
+        UserDefaults.standard.register(defaults: ["preferToday": true, "preferMyInspections": true])
+        config.userContentController.addUserScript(Self.filterScript())
         webView = WKWebView(frame: .zero, configuration: config)
         super.init()
         webView.navigationDelegate = self
+        let handler = FilterMessageHandler { [weak self] message in
+            self?.filterNotice = message == "applying" ? "Selecting saved filters in Snug…" :
+                message == "unavailable" ? "Select filters in Snug: automatic selection couldn’t be verified." : nil
+        }
+        filterHandler = handler
+        config.userContentController.add(handler, contentWorld: .defaultClient, name: "presenceFilters")
         // Observe history/loading changes, including same-document navigation.
         observations = [
+            webView.observe(\.url, options: [.new]) { [weak self] _, _ in
+                self?.applyFilters()
+            },
             webView.observe(\.canGoBack, options: [.initial, .new]) { [weak self] view, _ in
                 self?.canGoBack = view.canGoBack
             },
@@ -35,6 +48,37 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
         webView.load(URLRequest(url: Snug.viewings, cachePolicy: .useProtocolCachePolicy))
     }
 
+    private static func filterSource() -> String {
+        guard let url = Bundle.main.url(forResource: "SnugFilters", withExtension: "js"),
+              let source = try? String(contentsOf: url, encoding: .utf8) else { return "" }
+        let defaults = UserDefaults.standard
+        let preferences = "{\"mine\":\(defaults.bool(forKey: "preferMyInspections")),\"today\":\(defaults.bool(forKey: "preferToday"))}"
+        return source.replacingOccurrences(of: "__PREFERENCES__", with: preferences)
+    }
+    private static func filterScript() -> WKUserScript {
+        WKUserScript(source: filterSource(), injectionTime: .atDocumentEnd,
+                     forMainFrameOnly: true, in: .defaultClient)
+    }
+    func updateFilterPreferences() {
+        // Future page loads use new settings. Do not disturb a form or manual filters.
+        let controller = webView.configuration.userContentController
+        controller.removeAllUserScripts()
+        controller.addUserScript(Self.filterScript())
+    }
+    private func applyFilters() {
+        guard let url = webView.url, url.scheme == "https", url.host == "app.snug.com",
+              url.path == "/teams/presencepm/viewings/mobile" else { filterNotice = nil; return }
+        let source = Self.filterSource()
+        guard !source.isEmpty else {
+            filterNotice = "Select filters in Snug: automatic selection is unavailable."
+            return
+        }
+        webView.evaluateJavaScript(source, in: nil, in: .defaultClient) { [weak self] result in
+            if case .failure = result {
+                self?.filterNotice = "Select filters in Snug: automatic selection is unavailable."
+            }
+        }
+    }
     func home() { hasError = false; webView.load(URLRequest(url: Snug.viewings)) }
     func reload() {
         hasError = false
@@ -51,10 +95,11 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
         isLoading = false; hasError = true; status = "Snug page interrupted"
     }
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        isLoading = true; hasError = false; status = "Loading Snug..."
+        isLoading = true; hasError = false; filterNotice = nil; status = "Loading Snug..."
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         isLoading = false; status = "Connected"; canGoBack = webView.canGoBack
+        applyFilters()
     }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         fail(error)
@@ -106,6 +151,11 @@ struct ContentView: View {
             .controlSize(.regular)
             .frame(minHeight: 44)
             .padding(.horizontal, 8)
+            if let notice = browser.filterNotice {
+                Text(notice).font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12).padding(.bottom, 6)
+            }
             Divider()
             ZStack(alignment: .top) {
                 // Keep this mounted during errors and sheets; never replace the session.
@@ -128,7 +178,7 @@ struct ContentView: View {
                 }
             }
         }
-        .sheet(isPresented: $showPreferences) { ViewingPreferencesView() }
+        .sheet(isPresented: $showPreferences, onDismiss: browser.updateFilterPreferences) { ViewingPreferencesView() }
         .confirmationDialog("Page recovery", isPresented: $showRecovery) {
             Button("Retry current page", action: browser.reload)
             Button("Return to inspections", action: browser.recover)
@@ -151,9 +201,9 @@ private struct ViewingPreferencesView: View {
                     Toggle("Today", isOn: $preferToday)
                     Toggle("My Inspections", isOn: $preferMyInspections)
                 } header: {
-                    Text("Preferred view · reminder only")
+                    Text("Select automatically on page load")
                 } footer: {
-                    Text("These preferences are saved on this iPhone. They do not filter Snug. Select the matching date and inspector options in Snug, where available. Snug controls whether those selections persist.")
+                    Text("On a fresh inspection page, the app selects Snug’s own Me and Today only controls. Changes here take effect on your next reload. Turning an option off leaves that Snug filter unchanged. You can change filters manually afterwards. Today may show no inspections.")
                 }
                 Section("Snug features") {
                     Text("Inspection listings, inspector selection, attendee details and check-in remain Snug web content.")
@@ -164,5 +214,19 @@ private struct ViewingPreferencesView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
+    }
+}
+
+// Weak closure avoids a retain cycle through WKUserContentController.
+private final class FilterMessageHandler: NSObject, WKScriptMessageHandler {
+    private let receive: (String) -> Void
+    init(receive: @escaping (String) -> Void) { self.receive = receive }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.frameInfo.isMainFrame,
+              let url = message.frameInfo.request.url, url.scheme == "https", url.host == "app.snug.com",
+              url.path == "/teams/presencepm/viewings/mobile",
+              let status = message.body as? String,
+              ["applying", "applied", "unavailable", "manual"].contains(status) else { return }
+        receive(status)
     }
 }

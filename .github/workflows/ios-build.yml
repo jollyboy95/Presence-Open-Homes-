@@ -7,6 +7,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Test safe filter automation
+        run: npm ci --ignore-scripts && npm test
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate Xcode project
