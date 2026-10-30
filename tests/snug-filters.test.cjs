@@ -9,7 +9,8 @@ const panel = `<div class="display-flex align-items-center"><div><select id="sel
 function fixture({ mine = true, today = true, url = 'https://app.snug.com/teams/presencepm/viewings/mobile', broken = false } = {}) {
     const dom = new JSDOM('<div data-testid="mobile-viewings-filter-toggle"></div><section></section>', { url, runScripts: 'outside-only' });
     const w = dom.window, doc = w.document, messages = [];
-    let tick, opens = 0, clicks = 0, changes = 0;
+    let tick, opens = 0, clicks = 0, changes = 0, clock = 0;
+    Object.defineProperty(w.performance, "now", { value: () => clock });
     w.Element.prototype.getClientRects = function () { return [{}]; };
     w.setInterval = fn => { tick = fn; return 1; };
     w.clearInterval = () => { tick = null; };
@@ -32,7 +33,7 @@ function fixture({ mine = true, today = true, url = 'https://app.snug.com/teams/
         });
     };
     const run = () => w.eval(source.replace('__PREFERENCES__', JSON.stringify({ mine, today })));
-    const advance = (count = 10) => { for (let i = 0; i < count && tick; i++) tick(); };
+    const advance = (count = 30) => { for (let i = 0; i < count && tick; i++) { clock += 250; tick(); } };
     return { w, doc, messages, run, advance, counts: () => ({ opens, clicks, changes }) };
 }
 test('opens observed panel, selects current account and Today, verifies, then collapses', () => {
@@ -40,7 +41,7 @@ test('opens observed panel, selects current account and Today, verifies, then co
     assert.deepEqual(f.messages, ['applying', 'applied']);
     assert.equal(f.doc.querySelector('select').value, 'fixture-user');
     assert.equal(f.doc.querySelector('[data-date]').value, 'today');
-    assert.deepEqual(f.counts(), { opens: 2, clicks: 1, changes: 1 });
+    assert.deepEqual(f.counts(), { opens: 2, clicks: 1, changes: 2 });
     f.doc.querySelector('[data-date]').value = 'custom';
     f.run(); f.advance();
     assert.equal(f.doc.querySelector('[data-date]').value, 'custom', 'later manual filters are left alone');
@@ -89,4 +90,23 @@ test('ambiguous duplicate date controls fail without changing filters', () => {
     assert.equal(f.messages.at(-1), 'unavailable');
     assert.equal(f.counts().changes, 0);
     assert.equal(f.counts().clicks, 0);
+});
+
+test('replays All then Today even when dropdown already says Today', () => {
+    const f = fixture(); f.run();
+    f.doc.querySelector('[data-date]').value = 'today';
+    const transitions = [];
+    f.doc.querySelector('[data-date]').addEventListener('change', e => transitions.push(e.target.value));
+    f.advance();
+    assert.deepEqual(transitions, ['all', 'today']);
+    assert.equal(f.messages.at(-1), 'applied');
+});
+test('selected Today with a stale future result heading is not reported as success', () => {
+    const f = fixture(); f.run();
+    const tomorrow = new f.w.Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+    const heading = tomorrow.toLocaleDateString('en-AU', { weekday: 'long' }) + ' (' + tomorrow.getDate() + ' ' + tomorrow.toLocaleDateString('en-AU', { month: 'short' }) + ')';
+    f.doc.body.insertAdjacentHTML('beforeend', '<h2>' + heading + '</h2>');
+    f.advance(90);
+    assert.equal(f.doc.querySelector('[data-date]').value, 'today');
+    assert.equal(f.messages.at(-1), 'unavailable');
 });

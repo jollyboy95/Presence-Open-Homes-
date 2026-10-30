@@ -27,8 +27,9 @@ or navigating away can discard unfinished web forms.
 The native Viewing preferences toggles now control a small WebKit script which
 operates Snug's existing filter controls on a fresh inspection-list document.
 It opens the observed filter panel, clicks the Team Member **Me** control, selects
-**Today only**, checks both selected controls, and collapses the panel if it opened
-it. Preferences default to enabled; previously saved toggle choices are respected.
+**Today only**, waits for list rendering to settle, replays the phone-verified All → Today
+transition, and collapses the panel if it opened it. It also checks visible date
+headings; a future-day heading prevents success even if the dropdown says Today. Preferences default to enabled; previously saved toggle choices are respected.
 Turning a preference off leaves that Snug filter unchanged. Preference changes take
 effect on the next reload. Later manual choices are not overwritten in the same
 document, including after returning from an inspection. A fresh reload or relaunch
@@ -39,7 +40,7 @@ This is automation of observed web controls, **not a supported Snug API or a nat
 inspection database**. Controls were inspected in the authenticated mobile page on
 30 October 2026. The script is restricted to the exact HTTPS Snug team/list route,
 main frame and an isolated content world. It does not read cookies, credentials,
-attendee data, application state or private API responses, and sends only status
+attendee details, application state or private API responses, and sends only status
 codes to native UI. It never submits check-ins. It stops on navigation, relevant
 manual input, ambiguous controls or a 20-second timeout. If controls change, use
 Snug's filters manually; the native banner reports when selection cannot be verified.
@@ -53,8 +54,9 @@ for iOS; the Presence mark remains its owner's branding, not a new original asse
 
 ### Automated checks
 With Node 22: `npm ci --ignore-scripts && npm test`.
-Nine DOM-fixture checks cover selection, independent preferences, route restrictions,
-timeout, ambiguity, navigation and preservation of later manual filters. They do
+Seventeen DOM-fixture checks cover selection, independent preferences, route restrictions,
+timeout, ambiguity, navigation, stale date headings, preservation of manual filters,
+Overview URL defaults, and dark appearance restoration. They do
 not replace authenticated WKWebView testing on the iPhone. CI runs these checks
 before the simulator compile.
 
@@ -90,3 +92,37 @@ before the simulator compile.
 CI verifies the filter fixtures and compilation for iOS Simulator. Authenticated web behavior and
 physical-device installation require the manual tests above; compilation is not
 proof of login or check-in success.
+
+## Dark appearance and Overview defaults
+Dark appearance is enabled by default for both native controls and Snug pages.
+The app recolours neutral page surfaces, text and borders. It does not invert or
+filter images, background images, logos or video. Dynamically added page content
+is themed too. More > Viewing preferences > Dark appearance restores Snug’s
+original colours when switched off and the sheet is closed. Third-party chat
+iframes and external sites keep their own appearance. Snug UI changes may require
+colour adjustments; check all check-in fields and controls on the phone.
+
+Overview's Live filter was inspected through Filter > Property > Live > Apply
+Filter. Snug produced this normal page URL, which retained the Live filter on
+reload: `https://app.snug.com/teams/presencepm/overview?listingStatus=live`.
+On a fresh Overview visit without an explicit listingStatus parameter, the app
+uses that observed parameter, preserving all other query parameters. Explicit
+listing filters and later manual changes are honoured. More > Viewing preferences
+can disable this default. No private API endpoint or property-status mutation is
+used; this changes only the displayed list.
+
+### Additional iPhone checks
+1. Reload inspections with Me + Today enabled. Verify the actual date headings
+   match today; do not judge success solely from the dropdown. No inspections is
+   a valid result. If a future day remains, report the fallback banner and heading.
+2. Open Overview using Snug’s speedometer icon. Verify the Property filter is Live.
+   Change filters manually and verify the app does not continually reset them.
+   Reload with the Live preference disabled and verify explicit filters are honoured.
+3. Check dark inspection lists, Overview, attendee details, text inputs, dropdowns,
+   dialogs and check-in buttons. Property photos must retain their original colours.
+   Switch Dark appearance off, close preferences and verify original colours return.
+4. Confirm login still persists and check-in still works during a legitimate inspection.
+
+Dark appearance was visually reviewed on a representative local page at an iPhone
+viewport. Full authenticated dark styling and the revised Today sequence still
+require physical-iPhone verification.

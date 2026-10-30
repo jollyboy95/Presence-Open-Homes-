@@ -8,14 +8,19 @@
     const state = window[key] = { timer: null };
     const report = status => window.webkit?.messageHandlers.presenceFilters.postMessage(status);
     if (!preferences.mine && !preferences.today) return;
-    let attempts = 0, opened = false, clickedMe = false, changedDate = false;
+    let attempts = 0, opened = false, clickedMe = false, datePhase = 0, stableTicks = 0;
     let originalManager = null, finished = false;
     const visible = e => !!e && e.getClientRects().length > 0;
     const text = e => e.textContent.trim();
+    let lastContentChange = performance.now();
+    const contentObserver = new MutationObserver(() => { lastContentChange = performance.now(); });
+    contentObserver.observe(document.getElementById('app-scrollable-container') || document.body,
+        { childList: true, characterData: true, subtree: true });
     const finish = status => {
         if (finished) return;
         finished = true;
         clearInterval(state.timer);
+        contentObserver.disconnect();
         document.removeEventListener('pointerdown', manual, true);
         document.removeEventListener('keydown', manual, true);
         report(status);
@@ -66,16 +71,37 @@
         }
         if (preferences.today) {
             const today = [...date.options].filter(o => text(o) === 'Today only' && !o.disabled);
-            if (today.length !== 1) return finish('unavailable');
-            if (date.value !== today[0].value) {
-                if (changedDate) return; // Wait for Snug to accept the event; never toggle repeatedly.
-                changedDate = true;
-                Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(date, today[0].value);
+            const all = [...date.options].filter(o => text(o) === 'All' && !o.disabled);
+            if (today.length !== 1 || all.length !== 1) return finish('unavailable');
+            // Me can update the list asynchronously. Let that render settle first.
+            if (performance.now() - lastContentChange < 1000) return;
+            const select = value => {
+                Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(date, value);
+                date.dispatchEvent(new Event('input', { bubbles: true }));
                 date.dispatchEvent(new Event('change', { bubbles: true }));
-                return;
+                lastContentChange = performance.now();
+            };
+            // Replay the user-verified All -> Today transition once, even when the
+            // dropdown already says Today but Snug's result list is stale.
+            if (datePhase === 0) { datePhase = 1; select(all[0].value); return; }
+            if (datePhase === 1) { datePhase = 2; select(today[0].value); return; }
+            if (date.value !== today[0].value) return;
+            // A selected dropdown alone did not prove filtering on the iPhone.
+            // Refuse success while any visible date heading is for another day.
+            const now = new Date();
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const walker = document.createTreeWalker(document.getElementById('app-scrollable-container') || document.body, NodeFilter.SHOW_TEXT);
+            let node;
+            while ((node = walker.nextNode())) {
+                const heading = node.textContent.trim().match(/^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday) \((\d{1,2}) ([A-Za-z]{3})\)$/);
+                if (heading && visible(node.parentElement) &&
+                    (+heading[1] !== now.getDate() || heading[2] !== months[now.getMonth()])) {
+                    stableTicks = 0;
+                    return;
+                }
             }
+            if (++stableTicks < 3) return;
         }
-        // Verified selected controls, not inferred from property-card contents.
         if (opened && toggles.length === 1) toggles[0].click();
         finish('applied');
     };

@@ -20,10 +20,13 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
     override init() {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
-        UserDefaults.standard.register(defaults: ["preferToday": true, "preferMyInspections": true])
-        config.userContentController.addUserScript(Self.filterScript())
+        UserDefaults.standard.register(defaults: ["preferToday": true, "preferMyInspections": true, "preferLiveOverview": true, "darkAppearance": true])
+        Self.scripts().forEach { config.userContentController.addUserScript($0) }
         webView = WKWebView(frame: .zero, configuration: config)
         super.init()
+        webView.isOpaque = false
+        webView.backgroundColor = UserDefaults.standard.bool(forKey: "darkAppearance") ? .black : .white
+        webView.scrollView.backgroundColor = webView.backgroundColor
         webView.navigationDelegate = self
         let handler = FilterMessageHandler { [weak self] message in
             self?.filterNotice = message == "applying" ? "Selecting saved filters in Snug…" :
@@ -59,13 +62,42 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
         WKUserScript(source: filterSource(), injectionTime: .atDocumentEnd,
                      forMainFrameOnly: true, in: .defaultClient)
     }
+    private static func resourceSource(_ name: String, token: String, preference: String) -> String {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "js"),
+              let source = try? String(contentsOf: url, encoding: .utf8) else { return "" }
+        return source.replacingOccurrences(of: token, with: UserDefaults.standard.bool(forKey: preference) ? "true" : "false")
+    }
+    private static func appearanceSource() -> String {
+        resourceSource("SnugAppearance", token: "__DARK__", preference: "darkAppearance")
+    }
+    private static func overviewSource() -> String {
+        resourceSource("SnugOverview", token: "__LIVE__", preference: "preferLiveOverview")
+    }
+    private static func scripts() -> [WKUserScript] {
+        [filterScript(), WKUserScript(source: appearanceSource(), injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true, in: .defaultClient),
+         WKUserScript(source: overviewSource(), injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true, in: .defaultClient)]
+    }
+    private func applyAppearance() {
+        webView.backgroundColor = UserDefaults.standard.bool(forKey: "darkAppearance") ? .black : .white
+        webView.scrollView.backgroundColor = webView.backgroundColor
+        guard webView.url?.scheme == "https", webView.url?.host == "app.snug.com" else { return }
+        webView.evaluateJavaScript(Self.appearanceSource(), in: nil, in: .defaultClient, completionHandler: nil)
+    }
     func updateFilterPreferences() {
         // Future page loads use new settings. Do not disturb a form or manual filters.
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
-        controller.addUserScript(Self.filterScript())
+        Self.scripts().forEach { controller.addUserScript($0) }
+        applyAppearance()
     }
     private func applyFilters() {
+        applyAppearance()
+        if let url = webView.url, url.scheme == "https", url.host == "app.snug.com",
+           url.path == "/teams/presencepm/overview" {
+            webView.evaluateJavaScript(Self.overviewSource(), in: nil, in: .defaultClient, completionHandler: nil)
+        }
         guard let url = webView.url, url.scheme == "https", url.host == "app.snug.com",
               url.path == "/teams/presencepm/viewings/mobile" else { filterNotice = nil; return }
         let source = Self.filterSource()
@@ -124,6 +156,7 @@ struct ContentView: View {
     @StateObject private var browser = BrowserModel()
     @State private var showRecovery = false
     @State private var showPreferences = false
+    @AppStorage("darkAppearance") private var darkAppearance = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -178,6 +211,7 @@ struct ContentView: View {
                 }
             }
         }
+        .preferredColorScheme(darkAppearance ? .dark : .light)
         .sheet(isPresented: $showPreferences, onDismiss: browser.updateFilterPreferences) { ViewingPreferencesView() }
         .confirmationDialog("Page recovery", isPresented: $showRecovery) {
             Button("Retry current page", action: browser.reload)
@@ -193,6 +227,8 @@ private struct ViewingPreferencesView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("preferToday") private var preferToday = true
     @AppStorage("preferMyInspections") private var preferMyInspections = true
+    @AppStorage("preferLiveOverview") private var preferLiveOverview = true
+    @AppStorage("darkAppearance") private var darkAppearance = true
 
     var body: some View {
         NavigationStack {
@@ -205,11 +241,22 @@ private struct ViewingPreferencesView: View {
                 } footer: {
                     Text("On a fresh inspection page, the app selects Snug’s own Me and Today only controls. Changes here take effect on your next reload. Turning an option off leaves that Snug filter unchanged. You can change filters manually afterwards. Today may show no inspections.")
                 }
+                Section {
+                    Toggle("Live properties in Overview", isOn: $preferLiveOverview)
+                } footer: {
+                    Text("Opens Overview with Snug’s Live listing filter unless the link already specifies a listing filter. Changes take effect on the next reload. Other filters remain available in Snug.")
+                }
+                Section {
+                    Toggle("Dark appearance", isOn: $darkAppearance)
+                } footer: {
+                    Text("Darkens Snug’s neutral page colours while preserving photos. Applies when you close this sheet. Turn off to restore Snug’s original colours if a page is hard to read.")
+                }
                 Section("Snug features") {
                     Text("Inspection listings, inspector selection, attendee details and check-in remain Snug web content.")
                     Text("Jump to Next is not available: the app has no supported access to inspection times or your assigned inspector. Choose your next inspection in Snug.")
                 }
             }
+            .preferredColorScheme(darkAppearance ? .dark : .light)
             .navigationTitle("Viewing preferences")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
