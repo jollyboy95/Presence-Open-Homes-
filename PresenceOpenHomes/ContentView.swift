@@ -13,6 +13,7 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var status = "Ready"
     @Published var filterNotice: String?
     private var filterHandler: FilterMessageHandler?
+    private var browserReady = false
 
     // A single persistent website data store retains cookies between launches.
     let webView: WKWebView
@@ -48,7 +49,20 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
         ]
         webView.allowsBackForwardNavigationGestures = true
         webView.scrollView.contentInsetAdjustmentBehavior = .automatic
-        webView.load(URLRequest(url: Snug.viewings, cachePolicy: .useProtocolCachePolicy))
+        // Read WebKit's own identity before the first request. Never replace its
+        // engine/device version with a hard-coded "latest browser" identity.
+        isLoading = true
+        status = "Preparing Snug…"
+        webView.evaluateJavaScript("navigator.userAgent") { [weak self] result, _ in
+            guard let self = self else { return }
+            if let original = result as? String {
+                self.webView.customUserAgent = BrowserIdentity.safariCompatibleUserAgent(
+                    original, systemVersion: ProcessInfo.processInfo.operatingSystemVersion)
+            }
+            // If identity lookup fails, keep WebKit's default; do not suppress warnings.
+            self.browserReady = true
+            self.home()
+        }
     }
 
     private static func filterSource() -> String {
@@ -111,7 +125,11 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
             }
         }
     }
-    func home() { hasError = false; webView.load(URLRequest(url: Snug.viewings)) }
+    func home() {
+        guard browserReady else { return }
+        hasError = false
+        webView.load(URLRequest(url: Snug.viewings))
+    }
     func reload() {
         hasError = false
         if webView.url == nil { home() } else { webView.reload() }

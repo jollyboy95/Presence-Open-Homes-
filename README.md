@@ -126,3 +126,21 @@ used; this changes only the displayed list.
 Dark appearance was visually reviewed on a representative local page at an iPhone
 viewport. Full authenticated dark styling and the revised Today sequence still
 require physical-iPhone verification.
+
+## Embedded-browser compatibility
+Snug displayed “Update your browser” with an ordinary iPhone WKWebView user agent.
+A browser-identity reproduction loaded the inspection list without that warning
+when iOS Safari Version and Safari compatibility tokens were appended. The app
+now reads WebKit's default user agent before the first request, preserves its
+actual device/OS/engine/mobile tokens, and appends the installed OS's major/minor
+version with the conventional iOS Safari compatibility token and app name. It
+does not claim a newer WebKit engine, hide dialogs, press Continue, change TLS
+validation, or clear the persistent website data store. If identity lookup fails,
+the default user agent is retained and Snug's warning can still appear.
+
+CI compiles and runs `tests/BrowserIdentityChecks.swift` with the pure helper to
+check original identity preservation, installed-version formatting, idempotence,
+and safe handling of empty/non-mobile identities. The simulator compile also
+checks startup integration. iPhone acceptance: update over the existing app,
+force-close/relaunch, confirm inspections load without Continue, then verify login,
+Me/Today, Overview and legitimate check-in remain functional.
