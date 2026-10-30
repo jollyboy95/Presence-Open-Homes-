@@ -16,4 +16,4 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationDisplayName: Presence Open Homes
         TARGETED_DEVICE_FAMILY: "1"
-        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGN_STYLE: Automatic
