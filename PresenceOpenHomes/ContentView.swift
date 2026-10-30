@@ -9,7 +9,6 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var isLoading = false
     @Published var hasError = false
     @Published var canGoBack = false
-    @Published var canGoForward = false
     private var observations: [NSKeyValueObservation] = []
     @Published var status = "Ready"
 
@@ -26,9 +25,6 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
         observations = [
             webView.observe(\.canGoBack, options: [.initial, .new]) { [weak self] view, _ in
                 self?.canGoBack = view.canGoBack
-            },
-            webView.observe(\.canGoForward, options: [.initial, .new]) { [weak self] view, _ in
-                self?.canGoForward = view.canGoForward
             },
             webView.observe(\.isLoading, options: [.initial, .new]) { [weak self] view, _ in
                 self?.isLoading = view.isLoading
@@ -50,7 +46,6 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
         home()
     }
     func back() { if webView.canGoBack { hasError = false; webView.goBack() } }
-    func forward() { if webView.canGoForward { hasError = false; webView.goForward() } }
     func stop() { webView.stopLoading(); isLoading = false; status = "Loading stopped" }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         isLoading = false; hasError = true; status = "Snug page interrupted"
@@ -90,8 +85,6 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 Button(action: browser.back) { Image(systemName: "chevron.left").frame(minWidth: 44, minHeight: 44) }
                     .disabled(!browser.canGoBack).accessibilityLabel("Back")
-                Button(action: browser.forward) { Image(systemName: "chevron.right").frame(minWidth: 44, minHeight: 44) }
-                    .disabled(!browser.canGoForward).accessibilityLabel("Forward")
                 Spacer(minLength: 0)
                 Button(action: browser.home) { Label("Inspections", systemImage: "calendar") }
                     .accessibilityHint("Opens the Snug inspection list")

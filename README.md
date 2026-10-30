@@ -15,7 +15,9 @@ The workflow builds for the simulator only; installation on an iPhone requires A
 ## Roadmap
 Native date and inspector filters, attendee actions and owner reports depend on an authorised Snug integration. Not affiliated with Snug.
 ## v0.2 native navigation
-One compact top toolbar provides Back, Forward, Inspections, Reload/Stop and More.
+One compact top toolbar provides Back, Inspections, Reload/Stop and More.
+Forward was removed after an iPhone test found it tappable without visible navigation.
+Reopen an inspection from the list; the cause of Snug’s forward-history behavior is unconfirmed.
 The web view stays mounted during loading errors and preference sheets, using the
 same default persistent website data store. Recovery can retry the current page or
 return to the existing inspections URL; neither clears website storage. Reloading
@@ -33,7 +35,7 @@ Next are deferred. No JavaScript, DOM scraping or undocumented endpoints are add
    Install over v0.1; do not delete the app, which would remove its website data.
 2. Confirm Snug remains signed in and inspections load. Force-close and relaunch;
    confirm the session persists (unless Snug expires it).
-3. Open an inspection. Use Back then Forward and confirm correct history states.
+3. Open an inspection. Use Back and confirm it returns to the previous page. Reopen the inspection from the list.
    Use Inspections to return to the list. Check swipe-back navigation as well.
 4. Open More > Viewing preferences. Change Today/My Inspections, close the sheet,
    relaunch and verify the choices persist. Confirm toggling them does not change
@@ -46,7 +48,7 @@ Next are deferred. No JavaScript, DOM scraping or undocumented endpoints are add
 7. With an unfinished test form, open and dismiss preferences: entries should stay.
    Verify the recovery dialog warns before leaving a form. Cancel should do nothing.
 8. Check the toolbar on a small iPhone, landscape, large text and VoiceOver. Check
-   Back/Forward disabled states and the changing Reload/Stop accessibility label.
+   Back disabled state and the changing Reload/Stop accessibility label.
 
 CI verifies compilation for iOS Simulator only. Authenticated web behavior and
 physical-device installation require the manual tests above; compilation is not
